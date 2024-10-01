@@ -1,0 +1,73 @@
+---
+title: "MiniProject_draft"
+author: "Qinzhi Peng, Xinyan(Hathaway) Liu, Yujie(Johnny) Ye, Zhankai Ye"
+date: '2024-09-30'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+## Weight-based Deduplication
+
+## Supervised Classification
+
+### 1. Generating Duplication Data
+
+```{r}
+# install.packages("RecordLinkage")
+library(RecordLinkage)
+# Load the example datasets
+data(RLdata500)
+data(RLdata10000)
+
+# Generate a training set with 100 matches and 400 non-matches from RLData10000
+train_pairs = compare.dedup(RLdata10000, identity = identity.RLdata10000, 
+                            n_match = 100, n_non_match = 400)
+
+# Generate an evaluation set using record pairs from RLData500
+eval_pairs = compare.dedup(RLdata500, identity = identity.RLdata500)
+
+```
+
+### 2. Training
+
+```{r}
+model_rpart=trainSupv(train_pairs, method="rpart")
+model_bagging=trainSupv(train_pairs, method="bagging")
+model_svm=trainSupv(train_pairs, method="svm")
+model_ada=trainSupv(train_pairs, method="ada")
+model_nnet=trainSupv(train_pairs, method="nnet")
+model_bumping=trainSupv(train_pairs, method="bumping")
+```
+
+### 3. Classification
+
+```{r}
+result_rpart=classifySupv(model_rpart, eval_pairs)
+result_bagging=classifySupv(model_bagging, eval_pairs)
+result_svm=classifySupv(model_svm, eval_pairs)
+result_ada=classifySupv(model_ada, eval_pairs)
+result_nnet=classifySupv(model_nnet, eval_pairs)
+result_bumping=classifySupv(model_bumping, eval_pairs)
+```
+
+### 4. Results
+```{r}
+summary(result_ada)
+```
+
+
+```{r}
+summary(result_rpart)
+```
+
+```{r}
+summary(result_svm)
+```
+
+
+

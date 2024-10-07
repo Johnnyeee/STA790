@@ -1,0 +1,69 @@
+---
+title: "Supervised ER using RecordLinkage"
+date: "2024-10-06"
+output: pdf_document
+---
+
+## Why Supervised Method?
+
+In supervised entity resolution (ER), a machine learning model is trained on a labeled dataset where it is known which record pairs are matches and non-matches. The model learns to predict whether new record pairs refer to the same entity. This method can be highly effective but requires a large and representative labeled dataset.
+
+For instance, imagine you're part of an analytics team at a company. There is a set of data that need to be organized before being put into modeling. However, the understanding of the data schema required strong business and domain knowledge. Therefore, expertise in the analytics engineering team has already manually some labeled duplicate records for the 2023 dataset. Now, your team plan to use this dataset as a training set to build a model that can deduplicate records for the 2024 data.
+
+Therefore, we are going to show how to implement ER with several supervised ML methods.
+
+```{r}
+library(RecordLinkage)
+
+data(RLdata500)
+data(RLdata10000)
+
+# Generate a training set with 100 matches and 400 non-matches from RLData10000
+train_pairs = compare.dedup(RLdata10000, identity = identity.RLdata10000, 
+                            n_match = 100, n_non_match = 400)
+
+# Generate an evaluation set using record pairs from RLData500
+eval_pairs = compare.dedup(RLdata500, identity = identity.RLdata500)
+```
+
+```{r}
+levels(as.factor(train_pairs$pairs$is_match))
+```
+
+```{r}
+print(table(train_pairs$pairs$is_match))
+```
+
+```{r}
+class_weights <- c("N" = 100, "L" = 400)
+```
+
+### Tree-based Method: Bagging
+
+### SVM Binary Classifier
+
+The SVM model tries to find a hyperplane that best separates the matches from the non-matches in a high-dimensional space. (Fig 5 from <https://dl.acm.org/doi/pdf/10.1145/956750.956759>)
+
+```{r}
+model_bagging=trainSupv(train_pairs, method="bagging", omit.possible = TRUE, weights = class_weights)
+## Or you can write this:
+model_bagging=trainSupv(train_pairs, method="bagging", omit.possible = TRUE, parms = list(prior = c(0.2, 0.8)))
+```
+
+```{r}
+train_pairs_clean <- train_pairs$pairs[, !(names(train_pairs$pairs) %in% "fname_c2")]
+```
+
+```{r}
+model_svm=trainSupv(train_pairs, method="svm", omit.possible = TRUE, class.weights = class_weights)
+```
+
+```{r}
+result_bagging=classifySupv(model_bagging, eval_pairs)
+result_svm=classifySupv(model_svm, eval_pairs)
+```
+
+```{r}
+summary(result_bagging)
+summary(result_svm)
+```

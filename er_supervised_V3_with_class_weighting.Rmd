@@ -1,0 +1,166 @@
+---
+title: "Supervised ER using RecordLinkage"
+date: "2024-10-06"
+output: pdf_document
+---
+
+## Why Supervised Method?
+
+In supervised entity resolution (ER), a machine learning model is trained on a labeled dataset where it is known which record pairs are matches and non-matches. The model learns to predict whether new record pairs refer to the same entity. This method can be highly effective but requires a large and representative labeled dataset.
+
+For instance, imagine you're part of an analytics team at a company. There is a set of data that need to be organized before being put into modeling. However, the understanding of the data schema required strong business and domain knowledge. Therefore, expertise in the analytics engineering team has already manually some labeled duplicate records for the 2023 dataset. Now, your team plan to use this dataset as a training set to build a model that can deduplicate records for the 2024 data.
+
+Therefore, we are going to show how to implement ER with several supervised ML methods.
+
+```{r message=FALSE, warning=FALSE}
+library(RecordLinkage)
+```
+
+```{r}
+data(RLdata500)
+data(RLdata10000)
+
+# Generate a training set with 100 matches and 400 non-matches from RLData10000
+train_pairs = compare.dedup(RLdata10000, identity = identity.RLdata10000, 
+                            n_match = 100, n_non_match = 400)
+
+# Generate an evaluation set using record pairs from RLData500
+eval_pairs = compare.dedup(RLdata500, identity = identity.RLdata500)
+```
+
+```{r}
+levels(as.factor(train_pairs$pairs$is_match))
+```
+
+```{r}
+print(table(train_pairs$pairs$is_match))
+```
+
+```{r}
+class_weights <- c("N" = 100, "L" = 400)
+```
+
+### Tree-based Method: Bagging
+
+### SVM Binary Classifier
+
+The SVM model tries to find a hyperplane that best separates the matches from the non-matches in a high-dimensional space. (Fig 5 from <https://dl.acm.org/doi/pdf/10.1145/956750.956759>)
+
+```{r}
+model_bagging=trainSupv(train_pairs, method="bagging", omit.possible = TRUE, weights = class_weights)
+## Or you can write this:
+model_bagging=trainSupv(train_pairs, method="bagging", omit.possible = TRUE, parms = list(prior = c(0.2, 0.8)))
+```
+
+```{r}
+train_pairs_clean <- train_pairs$pairs[, !(names(train_pairs$pairs) %in% "fname_c2")]
+```
+
+```{r}
+model_svm=trainSupv(train_pairs, method="svm", omit.possible = TRUE, class.weights = class_weights)
+```
+
+```{r}
+result_bagging=classifySupv(model_bagging, eval_pairs)
+result_svm=classifySupv(model_svm, eval_pairs)
+```
+
+```{r}
+summary(result_bagging)
+summary(result_svm)
+```
+
+
+1.`trainSupv()`
+
+This function is used to train a supervised classifier based on a dataset of record pairs, where the true match status is known (labeled data). It takes record pairs as input, along with their true match labels, and builds a model that can predict whether future record pairs are matches or non-matches.
+
+1.1. train_pairs:
+- This argument is the dataset containing the record pairs to be used for training the model.
+- It is typically generated using functions like compare.dedup() or compare. linkage(), which create pairs of records from datasets with comparison vectors indicating whether the pair of records are matches or non-matches.
+  
+1.2. method = "rpart":
+- The method argument specifies the classification method used for training the supervised model.
+- In this case, "rpart" refers to the recursive partitioning method (decision trees) provided by the rpart package in $R$.
+- Other possible methods include "glm" for logistic regression, "svm" for support vector machines, or other classification methods supported by the package.
+
+1.3. omit. possible = TRUE :
+- The omit.possible argument controls whether possible matches should be excluded from the training process.
+- In record linkage, you typically have three categories of matches:
+- Matches: Pairs of records that are the same entity.
+- Non-matches: Pairs of records that are not the same entity.
+- Possible matches: Pairs where it's uncertain whether they match or not.
+- When omit.possible = TRUE, possible matches are excluded from the training data, meaning the model is trained only on clear matches and non-matches.
+
+
+2.`classifySupv()`
+
+After training a classifier using trainSupv(), the classifySupv() function is used to classify new, unlabeled record pairs. It predicts whether the record pairs are matches or non-matches based on the model built with the trainSupv() function.
+
+Examples: 
+
+### Decision tree
+```{r}
+model_rpart=trainSupv(train_pairs, method="rpart", omit.possible = TRUE, 
+                      parms = list(prior = c(0.2, 0.8)))
+result_rpart=classifySupv(model_rpart, eval_pairs)
+```
+
+
+### Adaboosting
+
+```{r}
+model_ada=trainSupv(train_pairs, method="ada", omit.possible = TRUE, 
+                    parms = list(prior = c(0.2, 0.8)))
+result_ada=classifySupv(model_ada, eval_pairs)
+```
+
+### Results
+```{r}
+summary(result_ada)
+```
+
+```{r}
+summary(result_rpart)
+```
+
+
+
+3. `summary()`
+
+3.1. Deduplication Data Set Information:
+- 500 records: The total number of records involved in the deduplication process.
+- 124,750 record pairs: The number of record pairs generated for comparison. For deduplication (comparing records within the same dataset), the number of pairs is typically $\frac{n(n-1)}{2}$, where $n$ is the number of records ( 500 in this case).
+- 50 matches: Out of the 124,750 record pairs, there are 50 true matches (record pairs that represent the same entity).
+- 124,700 non-matches: The remaining record pairs are non-matches (represent different entities).
+- 0 pairs with unknown status: There are no pairs with an unknown match status, meaning al pairs have been classified as either matches or non-matches.
+
+3.2. Linkage Results:
+- 2709 links detected: The classifier has identified 2,709 record pairs as "links", meaning they are classified as matches.
+- 0 possible links detected: No record pairs are classified as "possible matches." This is expected since you set omit. possible = TRUE in the trainSupv() function, which excluded possible matches from the training and classification process.
+- 122,041 non-links detected: The classifier has identified 122,041 record pairs as "nonlinks", meaning they are classified as non-matches.
+
+3.3. Error Rates:
+- Alpha error: 0.000000: The alpha error represents the false positive rate, or the proportion of non-matches that were incorrectly classified as matches. In this case, the alpha error is 0 , meaning there were no false positives.
+- Beta error: 0.021323: The beta error represents the false negative rate, or the proportion of true matches that were incorrectly classified as non-matches. In this case, the beta error is approximately $\mathbf{2 . 1 3}$ \%, meaning that about $2.13 \%$ of the true matches were missed by the classifier.
+- Accuracy: 0.978685: The overall accuracy of the classifier is about $97.87 \%$, indicating that the model correctly classified the vast majority of record pairs.
+
+3.4. Classification Table:
+
+This table shows how the true match status (actual matches/non-matches) compares with the classification results (predicted matches/non-matches).
+\begin{tabular}{|l|l|l|l|}
+\hline True Status & $\mathbf{N}$ (Non-links) & $\mathbf{P}$ (Possible links) & L (Links) \\
+\hline FALSE & 122,041 & 0 & 2,659 \\
+\hline TRUE & 0 & 0 & 50 \\
+\hline
+\end{tabular}
+- TRUE (50 true matches):
+- 50 pairs were correctly classified as links (matches).
+- There were no false negatives or misclassifications for true matches into other categories.
+- FALSE (124,700 true non-matches):
+- 122,041 pairs were correctly classified as non-links (non-matches).
+- 2,659 pairs were incorrectly classified as links, representing false positives.
+
+The table gives a clear view of the confusion matrix, which helps in understanding the performance of the classifier.
+
+

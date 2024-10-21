@@ -15,7 +15,10 @@ The vignette covers the steps from generating record pairs to performing dedupli
 ## Outline
 
 ### Deduplication & Weigted Deduplication
-
+- Comparison Pattern
+- Comparison Functions
+- Blocking
+- Stochastic Record Linkage and Weight Calculation
 ### Supervised ML for ER
 - Use case of supervised methods for entity resolution
 - Generate paris of record
